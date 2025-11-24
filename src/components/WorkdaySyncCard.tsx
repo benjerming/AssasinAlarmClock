@@ -32,7 +32,7 @@ export const WorkdaySyncCard = ({ chinaWorkdays }: WorkdaySyncCardProps) => (
           <Typography color="text.secondary">
             {chinaWorkdays.hasData
               ? `已同步 · 数据更新时间 ${chinaWorkdays.lastUpdatedText ?? "未知"}`
-              : "尚未同步，暂按周一至周五计算工作日"}
+              : "尚未同步"}
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
             数据来源：
@@ -82,4 +82,3 @@ export const WorkdaySyncCard = ({ chinaWorkdays }: WorkdaySyncCardProps) => (
     </CardContent>
   </Card>
 );
-

@@ -156,4 +156,3 @@ export const getNextOccurrence = (alarm: Alarm, now: Date, options: NextOccurren
 
   return fallback;
 };
-

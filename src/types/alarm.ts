@@ -22,4 +22,3 @@ export type NewAlarmDraft = {
   days: DayValue[];
   mode: AlarmMode;
 };
-

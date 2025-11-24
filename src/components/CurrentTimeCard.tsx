@@ -76,4 +76,3 @@ export const CurrentTimeCard = ({ now, nextAlarm }: CurrentTimeCardProps) => (
     </CardContent>
   </Card>
 );
-

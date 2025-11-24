@@ -15,4 +15,3 @@ export const DAY_OPTIONS: { value: DayValue; label: string; short: string }[] = 
 export const DEFAULT_ALARM_MODE: AlarmMode = "custom";
 
 export const STORAGE_KEY = "assassin-alarm-clock:alarms";
-
