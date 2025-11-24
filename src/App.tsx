@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AppBar,
   Box,
@@ -30,6 +30,7 @@ import AddAlarmIcon from "@mui/icons-material/AddAlarm";
 import AlarmOnIcon from "@mui/icons-material/AlarmOn";
 import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import "./App.css";
 import { useChinaWorkdays } from "./hooks/useChinaWorkdays";
 
@@ -143,6 +144,48 @@ const formatRelative = (target: Date, from: Date) => {
   return `距离响铃还有 ${hoursPart}${hoursPart && minutesPart ? " " : ""}${minutesPart}`.trim();
 };
 
+type TauriWindow = Window & {
+  __TAURI__?: unknown;
+  __TAURI_INTERNALS__?: unknown;
+  __TAURI_METADATA__?: unknown;
+  __TAURI_IPC__?: unknown;
+};
+
+export const isTauriEnvironment = () => {
+  if (typeof window === "undefined") return false;
+  const candidate = window as TauriWindow;
+  return Boolean(
+    candidate.__TAURI__ ??
+      candidate.__TAURI_INTERNALS__ ??
+      candidate.__TAURI_METADATA__ ??
+      candidate.__TAURI_IPC__,
+  );
+};
+
+const formatMinuteKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hour}:${minute}`;
+};
+
+const shouldTriggerAlarm = (alarm: Alarm, current: Date, isWorkday: (date: Date) => boolean) => {
+  if (!alarm.enabled) return false;
+  const [hour, minute] = alarm.time.split(":").map(Number);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return false;
+  if (current.getHours() !== hour || current.getMinutes() !== minute) return false;
+
+  if (alarm.mode === "workday") {
+    return isWorkday(current);
+  }
+
+  if (alarm.days.length === 0) return true;
+  const today = DAY_ORDER[current.getDay()];
+  return alarm.days.includes(today);
+};
+
 type NextOccurrenceOptions = {
   isWorkday?: (date: Date) => boolean;
 };
@@ -195,11 +238,63 @@ function App() {
     mode: DEFAULT_ALARM_MODE as AlarmMode,
   });
   const chinaWorkdays = useChinaWorkdays();
+  const [notificationGranted, setNotificationGranted] = useState(false);
+  const lastNotificationRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!isTauriEnvironment()) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        let granted = await isPermissionGranted();
+        if (!granted) {
+          const permission = await requestPermission();
+          granted = permission === "granted";
+        }
+        if (!cancelled) {
+          setNotificationGranted(granted);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("无法获取通知权限", error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!notificationGranted || !isTauriEnvironment()) return;
+    const occurrenceKey = formatMinuteKey(now);
+
+    alarms.forEach((alarm) => {
+      if (!shouldTriggerAlarm(alarm, now, chinaWorkdays.isWorkday)) return;
+      if (lastNotificationRef.current[alarm.id] === occurrenceKey) return;
+      lastNotificationRef.current[alarm.id] = occurrenceKey;
+
+      try {
+        Promise.resolve(
+          sendNotification({
+            title: alarm.label || "闹钟",
+            body: `${alarm.time} · ${alarm.label || "闹钟"} 正在响铃`,
+          }),
+        ).catch((error: unknown) => {
+          console.warn("系统通知发送失败", error);
+        });
+      } catch (error) {
+        console.warn("系统通知发送失败", error);
+      }
+    });
+  }, [alarms, now, notificationGranted, chinaWorkdays.isWorkday]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("localStorage" in window)) return;
