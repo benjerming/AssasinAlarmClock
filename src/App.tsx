@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   Container,
   CssBaseline,
   Dialog,
@@ -23,7 +24,6 @@ import {
   Toolbar,
   Tooltip,
   Typography,
-  Chip,
 } from "@mui/material";
 import { createTheme } from "@mui/material/styles";
 import AddAlarmIcon from "@mui/icons-material/AddAlarm";
@@ -31,8 +31,10 @@ import AlarmOnIcon from "@mui/icons-material/AlarmOn";
 import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import "./App.css";
+import { useChinaWorkdays } from "./hooks/useChinaWorkdays";
 
 type DayValue = "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
+type AlarmMode = "custom" | "workday";
 
 type Alarm = {
   id: string;
@@ -40,6 +42,7 @@ type Alarm = {
   time: string; // HH:mm
   days: DayValue[];
   enabled: boolean;
+  mode: AlarmMode;
 };
 
 type NextAlarmInfo = {
@@ -84,6 +87,7 @@ const generateId = () =>
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const initialAlarms: Alarm[] = [];
+const DEFAULT_ALARM_MODE: AlarmMode = "custom";
 const STORAGE_KEY = "assassin-alarm-clock:alarms";
 
 const parseStoredAlarms = (value: unknown): Alarm[] => {
@@ -91,7 +95,7 @@ const parseStoredAlarms = (value: unknown): Alarm[] => {
   return value
     .map((item) => {
       if (!item || typeof item !== "object") return null;
-      const { id, label, time, days, enabled } = item as Partial<Alarm>;
+      const { id, label, time, days, enabled, mode } = item as Partial<Alarm>;
       if (typeof time !== "string") return null;
       return {
         id: typeof id === "string" ? id : generateId(),
@@ -101,6 +105,7 @@ const parseStoredAlarms = (value: unknown): Alarm[] => {
           ? days.filter((day): day is DayValue => DAY_ORDER.includes(day as DayValue))
           : [],
         enabled: typeof enabled === "boolean" ? enabled : true,
+        mode: mode === "workday" ? "workday" : DEFAULT_ALARM_MODE,
       };
     })
     .filter(Boolean) as Alarm[];
@@ -138,23 +143,44 @@ const formatRelative = (target: Date, from: Date) => {
   return `距离响铃还有 ${hoursPart}${hoursPart && minutesPart ? " " : ""}${minutesPart}`.trim();
 };
 
-const getNextOccurrence = (alarm: Alarm, now: Date): Date | null => {
+type NextOccurrenceOptions = {
+  isWorkday?: (date: Date) => boolean;
+};
+
+const defaultWorkdayChecker = (date: Date) => {
+  const day = date.getDay();
+  return day >= 1 && day <= 5;
+};
+
+const getNextOccurrence = (alarm: Alarm, now: Date, options: NextOccurrenceOptions = {}): Date | null => {
   if (!alarm.enabled) return null;
   const [hour, minute] = alarm.time.split(":").map(Number);
   const activeDays = alarm.days.length ? alarm.days : DAY_ORDER;
+  const isWorkday = options.isWorkday ?? defaultWorkdayChecker;
+  const searchRange = alarm.mode === "workday" ? 90 : 14;
+  let fallback: Date | null = null;
 
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < searchRange; i++) {
     const candidate = new Date(now);
     candidate.setDate(now.getDate() + i);
     candidate.setHours(hour, minute, 0, 0);
-    const dayValue = DAY_ORDER[candidate.getDay()];
-    if (activeDays.includes(dayValue) && candidate > now) {
-      return candidate;
+    if (candidate <= now) continue;
+    if (!fallback) {
+      fallback = new Date(candidate);
+    }
+
+    if (alarm.mode === "workday") {
+      if (isWorkday(candidate)) {
+        return candidate;
+      }
+    } else {
+      const dayValue = DAY_ORDER[candidate.getDay()];
+      if (activeDays.includes(dayValue)) {
+        return candidate;
+      }
     }
   }
-  const fallback = new Date(now);
-  fallback.setDate(now.getDate() + 7);
-  fallback.setHours(hour, minute, 0, 0);
+
   return fallback;
 };
 
@@ -166,7 +192,9 @@ function App() {
     label: "",
     time: getRoundedTime(),
     days: [] as DayValue[],
+    mode: DEFAULT_ALARM_MODE as AlarmMode,
   });
+  const chinaWorkdays = useChinaWorkdays();
 
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 1000);
@@ -184,14 +212,14 @@ function App() {
 
   const nextAlarm = useMemo<NextAlarmInfo | null>(() => {
     return alarms.reduce<NextAlarmInfo | null>((closest, alarm) => {
-      const date = getNextOccurrence(alarm, now);
+      const date = getNextOccurrence(alarm, now, { isWorkday: chinaWorkdays.isWorkday });
       if (!date) return closest;
       if (!closest || date < closest.date) {
         return { alarm, date };
       }
       return closest;
     }, null);
-  }, [alarms, now]);
+  }, [alarms, now, chinaWorkdays.isWorkday]);
 
   const handleToggle = (id: string) => {
     setAlarms((prev) =>
@@ -213,6 +241,7 @@ function App() {
         time: newAlarm.time,
         days: [...newAlarm.days],
         enabled: true,
+        mode: newAlarm.mode,
       },
     ]);
     setDialogOpen(false);
@@ -220,11 +249,21 @@ function App() {
       label: "",
       time: getRoundedTime(),
       days: [],
+      mode: newAlarm.mode,
     });
   };
 
   const handleDayChange = (_: React.MouseEvent<HTMLElement>, values: DayValue[]) => {
     setNewAlarm((prev) => ({ ...prev, days: values }));
+  };
+
+  const handleModeChange = (_: React.MouseEvent<HTMLElement>, value: AlarmMode | null) => {
+    if (!value) return;
+    setNewAlarm((prev) => ({
+      ...prev,
+      mode: value,
+      days: value === "custom" ? prev.days : [],
+    }));
   };
 
   return (
@@ -289,9 +328,77 @@ function App() {
             </CardContent>
           </Card>
 
+          <Card elevation={0} variant="outlined" sx={{ borderRadius: 3 }}>
+            <CardContent>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={2}
+                alignItems={{ xs: "flex-start", sm: "center" }}
+                justifyContent="space-between"
+              >
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="overline" color="text.secondary">
+                    工作日同步
+                  </Typography>
+                  <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                    中国法定节假日
+                  </Typography>
+                  <Typography color="text.secondary">
+                    {chinaWorkdays.hasData
+                      ? `已同步 · 数据更新时间 ${chinaWorkdays.lastUpdatedText ?? "未知"}`
+                      : "尚未同步，暂按周一至周五计算工作日"}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+                    数据来源：
+                    <Box
+                      component="a"
+                      href={chinaWorkdays.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      sx={{ color: "primary.main", ml: 0.5 }}
+                    >
+                      china-holiday-calender
+                    </Box>
+                  </Typography>
+                </Box>
+                <Stack spacing={1} alignItems={{ xs: "stretch", sm: "flex-end" }} sx={{ minWidth: { sm: 220 } }}>
+                  <Chip
+                    label={
+                      chinaWorkdays.loading
+                        ? "同步中..."
+                        : chinaWorkdays.error
+                          ? "同步失败，使用默认规则"
+                          : "已同步"
+                    }
+                    color={
+                      chinaWorkdays.loading
+                        ? "default"
+                        : chinaWorkdays.error
+                          ? "warning"
+                          : "success"
+                    }
+                  />
+                  <Button
+                    variant="outlined"
+                    onClick={chinaWorkdays.refresh}
+                    disabled={chinaWorkdays.loading}
+                    fullWidth
+                  >
+                    {chinaWorkdays.loading ? "同步中..." : "重新同步"}
+                  </Button>
+                </Stack>
+              </Stack>
+              {chinaWorkdays.error && (
+                <Typography variant="body2" color="error" sx={{ mt: 2 }}>
+                  {chinaWorkdays.error}
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
+
           <Stack spacing={2}>
             {alarms.map((alarm) => {
-              const next = getNextOccurrence(alarm, now);
+              const next = getNextOccurrence(alarm, now, { isWorkday: chinaWorkdays.isWorkday });
               return (
                 <Card key={alarm.id} variant="outlined" sx={{ borderRadius: 3 }}>
                   <CardContent>
@@ -308,26 +415,35 @@ function App() {
                         <Typography variant="subtitle1" color="text.secondary">
                           {alarm.label || "未命名闹钟"}
                         </Typography>
-                        <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: "wrap" }}>
-                          {DAY_OPTIONS.map((option) => (
-                            <Chip
-                              key={option.value}
-                              label={option.short}
-                              size="small"
-                              color={alarm.days.length ? "primary" : "default"}
-                              variant={
-                                alarm.days.length === 0 || alarm.days.includes(option.value)
-                                  ? "filled"
-                                  : "outlined"
-                              }
-                              sx={{
-                                borderRadius: 1,
-                                opacity:
-                                  alarm.days.length === 0 || alarm.days.includes(option.value) ? 1 : 0.4,
-                              }}
-                            />
-                          ))}
-                        </Stack>
+                        {alarm.mode === "workday" ? (
+                          <Chip
+                            label="工作日 · 自动跳过法定节假日"
+                            size="small"
+                            color="secondary"
+                            sx={{ mt: 1, borderRadius: 1 }}
+                          />
+                        ) : (
+                          <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: "wrap" }}>
+                            {DAY_OPTIONS.map((option) => (
+                              <Chip
+                                key={option.value}
+                                label={option.short}
+                                size="small"
+                                color={alarm.days.length ? "primary" : "default"}
+                                variant={
+                                  alarm.days.length === 0 || alarm.days.includes(option.value)
+                                    ? "filled"
+                                    : "outlined"
+                                }
+                                sx={{
+                                  borderRadius: 1,
+                                  opacity:
+                                    alarm.days.length === 0 || alarm.days.includes(option.value) ? 1 : 0.4,
+                                }}
+                              />
+                            ))}
+                          </Stack>
+                        )}
                         <Typography variant="body2" color="secondary" sx={{ mt: 1, visibility: alarm.enabled ? "visible" : "hidden" }} >
                           {next && formatRelative(next, now)}
                         </Typography>
@@ -336,7 +452,7 @@ function App() {
                         <Switch
                           checked={alarm.enabled}
                           onChange={() => handleToggle(alarm.id)}
-                          inputProps={{ "aria-label": "启用或关闭闹钟" }}
+                          slotProps={{ input: { "aria-label": "启用或关闭闹钟" } }}
                         />
                         <Tooltip title="删除">
                           <IconButton color="inherit" onClick={() => handleDelete(alarm.id)}>
@@ -375,7 +491,7 @@ function App() {
         onClose={() => setDialogOpen(false)}
         fullWidth
         maxWidth="sm"
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
       >
         <DialogTitle>新建闹钟</DialogTitle>
         <DialogContent dividers>
@@ -392,22 +508,54 @@ function App() {
               type="time"
               value={newAlarm.time}
               onChange={(e) => setNewAlarm((prev) => ({ ...prev, time: e.target.value }))}
-              inputProps={{ step: 300 }}
+              slotProps={{ input: { inputProps: { step: 300 } } }}
             />
             <Box>
               <Typography variant="subtitle2" gutterBottom color="text.secondary">
-                重复
+                重复策略
               </Typography>
-              <ToggleButtonGroup value={newAlarm.days} onChange={handleDayChange} color="primary" sx={{ flexWrap: "wrap" }}>
-                {DAY_OPTIONS.map((option) => (
-                  <ToggleButton key={option.value} value={option.value} sx={{ flex: 1, minWidth: 80 }}>
-                    {option.label}
-                  </ToggleButton>
-                ))}
+              <ToggleButtonGroup
+                value={newAlarm.mode}
+                exclusive
+                onChange={handleModeChange}
+                color="primary"
+                sx={{ flexWrap: "wrap", mb: 2 }}
+              >
+                <ToggleButton value="custom" sx={{ flex: 1, minWidth: 120 }}>
+                  自定义
+                </ToggleButton>
+                <ToggleButton
+                  value="workday"
+                  sx={{ flex: 1, minWidth: 120 }}
+                  disabled={!chinaWorkdays.hasData && chinaWorkdays.loading}
+                >
+                  工作日（跳过节假日）
+                </ToggleButton>
               </ToggleButtonGroup>
-              <Typography variant="caption" color="text.secondary">
-                不选择即表示每天提醒
-              </Typography>
+              {newAlarm.mode === "custom" ? (
+                <>
+                  <ToggleButtonGroup
+                    value={newAlarm.days}
+                    onChange={handleDayChange}
+                    color="primary"
+                    sx={{ flexWrap: "wrap" }}
+                  >
+                    {DAY_OPTIONS.map((option) => (
+                      <ToggleButton key={option.value} value={option.value} sx={{ flex: 1, minWidth: 80 }}>
+                        {option.label}
+                      </ToggleButton>
+                    ))}
+                  </ToggleButtonGroup>
+                  <Typography variant="caption" color="text.secondary">
+                    不选择即表示每天提醒
+                  </Typography>
+                </>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  将在中国法定工作日自动响铃，节假日与调休信息来自网络同步
+                  {!chinaWorkdays.hasData ? "（当前暂按默认规则计算）" : ""}
+                </Typography>
+              )}
             </Box>
           </Stack>
         </DialogContent>
