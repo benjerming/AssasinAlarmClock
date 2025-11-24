@@ -1,13 +1,6 @@
 import { DEFAULT_ALARM_MODE, DAY_ORDER, STORAGE_KEY } from "../constants/alarm";
 import type { Alarm, DayValue } from "../types/alarm";
 
-type TauriWindow = Window & {
-  __TAURI__?: unknown;
-  __TAURI_INTERNALS__?: unknown;
-  __TAURI_METADATA__?: unknown;
-  __TAURI_IPC__?: unknown;
-};
-
 export const generateId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -75,6 +68,13 @@ export const formatRelative = (target: Date, from: Date) => {
   const minutesPart = minutes > 0 ? `${minutes} 分钟` : "";
   if (!hoursPart && !minutesPart) return "即将响铃";
   return `距离响铃还有 ${hoursPart}${hoursPart && minutesPart ? " " : ""}${minutesPart}`.trim();
+};
+
+type TauriWindow = Window & {
+  __TAURI__?: unknown;
+  __TAURI_INTERNALS__?: unknown;
+  __TAURI_METADATA__?: unknown;
+  __TAURI_IPC__?: unknown;
 };
 
 export const isTauriEnvironment = () => {
