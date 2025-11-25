@@ -171,20 +171,15 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      {isTauri ? (
-        <Box sx={{ position: "sticky", top: 0, zIndex: (theme) => theme.zIndex.appBar }}>
-          <TitleBar />
-        </Box>
-      ) : (
-        <AppBar position="sticky" elevation={0} color="transparent">
-          <Toolbar>
-            <AlarmOnIcon color="primary" sx={{ mr: 1 }} />
-            <Typography variant="h6" sx={{ flexGrow: 1 }}>
-              闹钟
-            </Typography>
-          </Toolbar>
-        </AppBar>
-      )}
+
+      <AppBar position="sticky" elevation={0} color="primary">
+        <Toolbar>
+          <AlarmOnIcon color="inherit" sx={{ mr: 1 }} />
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+            闹钟
+          </Typography>
+        </Toolbar>
+      </AppBar>
 
       <Container maxWidth="md" sx={{ py: 4 }}>
         <Stack spacing={3}>
