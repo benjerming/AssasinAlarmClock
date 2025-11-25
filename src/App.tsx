@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AppBar, Box, Container, CssBaseline, Fab, Stack, ThemeProvider, Toolbar, Typography } from "@mui/material";
+import { AppBar, Container, CssBaseline, Fab, Stack, ThemeProvider, Toolbar, Typography } from "@mui/material";
 import { createTheme } from "@mui/material/styles";
 import AddAlarmIcon from "@mui/icons-material/AddAlarm";
 import AlarmOnIcon from "@mui/icons-material/AlarmOn";
@@ -10,7 +10,6 @@ import { useChinaWorkdays } from "./hooks/useChinaWorkdays";
 import { AlarmList } from "./components/AlarmList";
 import { CurrentTimeCard } from "./components/CurrentTimeCard";
 import { NewAlarmDialog } from "./components/NewAlarmDialog";
-import { TitleBar } from "./components/TitleBar";
 import { WorkdaySyncCard } from "./components/WorkdaySyncCard";
 import type { Alarm, NewAlarmDraft, NextAlarmInfo } from "./types/alarm";
 import {
