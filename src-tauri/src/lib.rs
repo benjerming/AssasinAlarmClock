@@ -96,6 +96,14 @@ pub fn run() {
         .setup(|app| {
             build_tray(app)?;
 
+            let is_autostart = std::env::args().any(|arg| arg == "--autostart");
+            if is_autostart {
+                if let Some(window) = app.get_webview_window("main") {
+                    // 自启时直接隐藏主窗体，待托盘唤起
+                    window.hide().ok();
+                }
+            }
+
             #[cfg(desktop)]
             {
                 info!("检查开机自启状态");
@@ -170,7 +178,7 @@ pub fn run() {
     {
         builder = builder.plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
-            None,
+            Some(vec!["--autostart"]),
         ));
     }
 
